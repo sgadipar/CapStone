@@ -65,8 +65,29 @@ class TransactionServiceTest {
          *   - result.get(0).status() equals TransactionStatus.COMPLETED.name()
          *   - acct.getBalance() is equal by comparing to "250.00"
          */
-        // TODO: implement this test
-        throw new UnsupportedOperationException("test not yet implemented");
+        // Setup: Create account with initial balance of 200.00
+        AccountEntity acct = account("acc_1", "usr_1", new BigDecimal("200.00"));
+
+        // Stub accounts.findById to return the account
+        when(accounts.findById("acc_1")).thenReturn(Optional.of(acct));
+
+        // Stub transactions.save to return the argument (the transaction entity)
+        when(transactions.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Exercise: Submit a deposit of 50.00
+        List<TransactionDto> result = svc.submit(
+                new NewTransactionRequest("acc_1", "DEPOSIT",
+                        new BigDecimal("50.00"), null, "paycheck"),
+                "usr_1");
+
+        // Verify: result has size 1
+        assertThat(result).hasSize(1);
+
+        // Verify: status is COMPLETED
+        assertThat(result.get(0).status()).isEqualTo(TransactionStatus.COMPLETED.name());
+
+        // Verify: balance increased from 200.00 to 250.00
+        assertThat(acct.getBalance()).isEqualByComparingTo("250.00");
     }
 
     // ------------------------------------------------------------------ withdrawal
@@ -81,7 +102,30 @@ class TransactionServiceTest {
          * Verify: status=COMPLETED, balance becomes 70.00
          */
         // TODO: implement this test
-        throw new UnsupportedOperationException("test not yet implemented");
+        // Setup: Create account with initial balance of 200.00
+        AccountEntity acct = account("acc_1", "usr_1", new BigDecimal("200.00"));
+
+        // Stub accounts.findById to return the account
+        when(accounts.findById("acc_1")).thenReturn(Optional.of(acct));
+
+        // Stub transactions.save to return the argument (the transaction entity)
+        when(transactions.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Exercise: Submit a deposit of 50.00
+        List<TransactionDto> result = svc.submit(
+                new NewTransactionRequest("acc_1", "WITHDRAWAL",
+                        new BigDecimal("50.00"), null, "paycheck"),
+                "usr_1");
+
+        // Verify: result has size 1
+        assertThat(result).hasSize(1);
+
+        // Verify: status is COMPLETED
+        assertThat(result.get(0).status()).isEqualTo(TransactionStatus.COMPLETED.name());
+
+        // Verify: balance increased from 200.00 to 250.00
+        assertThat(acct.getBalance()).isEqualByComparingTo("150.00");
+
     }
 
     @Test
@@ -98,8 +142,21 @@ class TransactionServiceTest {
          *
          * This test proves the service checks funds BEFORE touching the balance.
          */
-        // TODO: implement this test
-        throw new UnsupportedOperationException("test not yet implemented");
+        // Setup: Create account with initial balance of 10.00
+        AccountEntity acct = account("acc_1", "usr_1", new BigDecimal("10.00"));
+
+        // Stub accounts.findById to return the account
+        when(accounts.findById("acc_1")).thenReturn(Optional.of(acct));
+
+        // Exercise & Verify: Attempting to withdraw 50.00 from account with only 10.00 should throw InsufficientFundsException
+        assertThatThrownBy(() -> svc.submit(
+                new NewTransactionRequest("acc_1", "WITHDRAWAL",
+                        new BigDecimal("50.00"), null, "withdrawal"),
+                "usr_1"))
+            .isInstanceOf(InsufficientFundsException.class);
+
+        // Verify: balance remains unchanged at 10.00
+        assertThat(acct.getBalance()).isEqualByComparingTo("10.00");
     }
 
     // ------------------------------------------------------------------ ownership
