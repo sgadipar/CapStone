@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant User
+    participant Frontend (UI)
+    participant BFF
+    participant Auth Server
+    participant Resource Server
+
+    User->>Frontend (UI): Access protected page / click login
+    Frontend (UI)->>Auth Server: Redirect to /oauth2/authorize (with client_id, scope, redirect_uri)
+    Auth Server->>User: Display login form
+    User->>Auth Server: Submit credentials (username/password)
+    Auth Server->>Auth Server: Authenticate user
+    Auth Server->>Frontend (UI): Redirect with authorization code (to redirect_uri)
+    Frontend (UI)->>BFF: Send authorization code
+    BFF->>Auth Server: POST /oauth2/token (exchange code for tokens, with client_secret)
+    Auth Server->>BFF: Return access_token and refresh_token
+    BFF->>Frontend (UI): Confirm login success / store tokens client-side if needed
+
+    Note over Frontend (UI), Resource Server: Later, when accessing protected API
+    Frontend (UI)->>BFF: API request with access_token (in header)
+    BFF->>Resource Server: Forward request with access_token
+    Resource Server->>Resource Server: Validate access_token (JWT claims, signature)
+    Resource Server->>BFF: Return protected data
+    BFF->>Frontend (UI): Return data to UI
