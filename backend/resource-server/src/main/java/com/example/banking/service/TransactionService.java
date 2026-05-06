@@ -163,9 +163,34 @@ public class TransactionService {
      * (step 3). If the check throws, the balance must remain unchanged.
      */
     private TransactionDto applyWithdrawal(AccountEntity source, NewTransactionRequest req) {
-        // TODO: implement withdrawal — see Javadoc above
+        // Step 1: Validate - WITHDRAWAL cannot have a counterparty
+        if (req.counterparty() != null && !req.counterparty().isBlank()) {
+            throw new BusinessRuleException("WITHDRAWAL cannot have a counterparty");
+        }
 
-        throw new UnsupportedOperationException("applyWithdrawal: not yet implemented");
+        // Step 2: Check sufficient funds BEFORE modifying balance
+        requireFunds(source, req.amount());
+
+        // Step 3: Subtract amount from balance using BigDecimal.subtract()
+        BigDecimal newBalance = source.getBalance().subtract(req.amount());
+        source.setBalance(newBalance);
+
+        // Step 4: Persist the updated account
+        accounts.save(source);
+
+        // Step 5: Create transaction row with all required fields
+        TransactionEntity row = persistRow(
+                source.getAccountId(),
+                TransactionType.WITHDRAWAL,
+                req.amount(),
+                TransactionStatus.COMPLETED,
+                null,  // counterparty = null (no counterparty for withdrawal)
+                null,  // transferGroupId = null (not a transfer)
+                req.description()
+        );
+
+        // Step 6: Return the transaction as a DTO
+        return TransactionDto.from(row);
     }
 
     // ---- TRANSFER_OUT ---------------------------------------------------
@@ -211,8 +236,120 @@ public class TransactionService {
     private List<TransactionDto> applyTransferOut(AccountEntity source,
                                                   NewTransactionRequest req,
                                                   String callerUserId) {
-        // TODO: implement transfer out — see Javadoc above
-        throw new UnsupportedOperationException("applyTransferOut: not yet implemented");
+        // === Validation (both branches) ===
+        // Step 1: Validate counterparty is provided
+        if (req.counterparty() == null || req.counterparty().isBlank()) {
+            throw new BusinessRuleException("TRANSFER_OUT requires a counterparty");
+        }
+
+        // Step 2: Check sufficient funds
+        requireFunds(source, req.amount());
+
+        // === Determine internal vs external ===
+        // Step 3: Load all accounts owned by callerUserId
+        List<AccountEntity> ownedAccounts = accounts.findByOwnerId(callerUserId);
+
+        // Step 4: Check if counterparty is an owned account (internal) or external
+        boolean isInternal = ownedAccounts.stream()
+                .anyMatch(acc -> acc.getAccountId().equals(req.counterparty()));
+
+        if (isInternal) {
+            // === Internal transfer path ===
+            // Step 5: Find the destination account from the owned list
+            AccountEntity destination = ownedAccounts.stream()
+                    .filter(acc -> acc.getAccountId().equals(req.counterparty()))
+                    .findFirst()
+                    .orElseThrow(() -> new ResourceNotFoundException("account", req.counterparty()));
+
+            // Step 6: Generate a shared transferGroupId
+            String transferGroupId = "grp_" + UUID.randomUUID();
+
+            // Step 7: Debit source (subtract amount, save)
+            source.setBalance(source.getBalance().subtract(req.amount()));
+            accounts.save(source);
+
+            // Step 8: Create TRANSFER_OUT row on source account
+            TransactionEntity outRow = persistRow(
+                    source.getAccountId(),
+                    TransactionType.TRANSFER_OUT,
+                    req.amount(),
+                    TransactionStatus.COMPLETED,
+                    destination.getAccountId(),  // counterparty
+                    transferGroupId,
+                    req.description()
+            );
+
+            // Step 9: Credit destination (add amount, save)
+            destination.setBalance(destination.getBalance().add(req.amount()));
+            accounts.save(destination);
+
+            // Step 10: Create TRANSFER_IN row on destination account
+            TransactionEntity inRow = persistRow(
+                    destination.getAccountId(),
+                    TransactionType.TRANSFER_IN,
+                    req.amount(),
+                    TransactionStatus.COMPLETED,
+                    source.getAccountId(),  // counterparty
+                    transferGroupId,
+                    req.description()
+            );
+
+            // Step 11: Return both rows
+            return List.of(TransactionDto.from(outRow), TransactionDto.from(inRow));
+
+        } else {
+            // === External transfer path (via PaymentService + WireMock) ===
+            // Step 12: Generate an idempotency key
+            String idempotencyKey = UUID.randomUUID().toString();
+
+            // Step 13: Call paymentService.submitExternalTransfer(...)
+            try {
+                paymentService.submitExternalTransfer(
+                        source.getAccountId(),
+                        req.counterparty(),
+                        req.amount(),
+                        source.getCurrency(),
+                        idempotencyKey
+                );
+
+                // On SUCCESS:
+                // Debit source (subtract amount, save)
+                source.setBalance(source.getBalance().subtract(req.amount()));
+                accounts.save(source);
+
+                // Persist TRANSFER_OUT row, status = COMPLETED, transferGroupId = null
+                TransactionEntity row = persistRow(
+                        source.getAccountId(),
+                        TransactionType.TRANSFER_OUT,
+                        req.amount(),
+                        TransactionStatus.COMPLETED,
+                        req.counterparty(),
+                        null,  // transferGroupId = null for external
+                        req.description()
+                );
+
+                // Return list of one row
+                return List.of(TransactionDto.from(row));
+
+            } catch (PaymentProcessorException e) {
+                // On FAILURE (PaymentProcessorException):
+                // Do NOT debit the source account
+
+                // Persist TRANSFER_OUT row, status = FAILED, transferGroupId = null
+                persistRow(
+                        source.getAccountId(),
+                        TransactionType.TRANSFER_OUT,
+                        req.amount(),
+                        TransactionStatus.FAILED,
+                        req.counterparty(),
+                        null,  // transferGroupId = null
+                        req.description()
+                );
+
+                // Rethrow the exception so GlobalExceptionHandler maps it to 502
+                throw e;
+            }
+        }
     }
 
     // ---- helpers --------------------------------------------------------

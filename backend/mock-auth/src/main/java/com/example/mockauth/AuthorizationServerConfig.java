@@ -119,6 +119,7 @@ public class AuthorizationServerConfig {
     public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
         return context -> {
             if (context.getPrincipal() != null) {
+
                 var authorities = context.getPrincipal().getAuthorities();
                 // Extract the role (e.g. "ROLE_CUSTOMER" → "CUSTOMER")
                 String role = authorities.stream()

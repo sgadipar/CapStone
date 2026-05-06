@@ -61,7 +61,7 @@ services:
     ports:
       - "8089:8080"
     volumes:
-      - C:/Project/scaffolding/wiremock-stubs/mappings:/home/wiremock/mappings
+      - C:/Project/scaffolding/Capstone/wiremock-stubs/mappings:/home/wiremock/mappings
     command: ["--global-response-templating", "--disable-gzip", "--verbose"]
 
 volumes:
