@@ -37,6 +37,13 @@ public class WebClientConfig {
             if (auth instanceof OAuth2AuthenticationToken oauthToken
                     && oauthToken.getPrincipal() instanceof OidcUser oidcUser) {
                 String idToken = oidcUser.getIdToken().getTokenValue();
+
+                // Log the JWT token for debugging
+                System.out.println("=== JWT TOKEN USED BY BFF ===");
+                System.out.println("Token: " + idToken);
+                System.out.println("Request: " + request.method() + " " + request.url());
+                System.out.println("============================");
+
                 ClientRequest withBearer = ClientRequest.from(request)
                         .headers(h -> h.setBearerAuth(idToken))
                         .build();
@@ -51,4 +58,3 @@ public class WebClientConfig {
                 .build();
     }
 }
-

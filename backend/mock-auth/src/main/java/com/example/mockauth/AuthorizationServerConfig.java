@@ -129,6 +129,15 @@ public class AuthorizationServerConfig {
                         .orElse("CUSTOMER");
                 context.getClaims().claim("role", role);
             }
+
+            // Log the JWT token for debugging
+            if (context.getTokenType().getValue().equals("access_token")) {
+                System.out.println("=== JWT CLAIMS ISSUED ===");
+                System.out.println("Claims: " + context.getClaims().build());
+                System.out.println("Principal: " + context.getPrincipal().getName());
+                System.out.println("Authorities: " + context.getPrincipal().getAuthorities());
+                System.out.println("==========================");
+            }
         };
     }
 
