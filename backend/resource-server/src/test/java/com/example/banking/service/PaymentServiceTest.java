@@ -111,7 +111,15 @@ class PaymentServiceTest {
          *       .isEqualTo("idem-key-1");
          */
         // TODO: implement this test
-        throw new UnsupportedOperationException("test not yet implemented");
+        ArgumentCaptor<HttpEntity<Object>> captor = ArgumentCaptor.forClass(HttpEntity.class);
+        when(http.exchange(eq("/payments"), eq(HttpMethod.POST), captor.capture(), eq(String.class)))
+                .thenReturn(org.springframework.http.ResponseEntity.ok("{}"));
+
+
+        svc.submitExternalTransfer("acc_1", "ext_acc", new BigDecimal("50.00"), "USD", "idem-key-1");
+
+        assertThat(captor.getValue().getHeaders().getFirst("Idempotency-Key"))
+                       .isEqualTo("idem-key-1");
     }
 
     // ------------------------------------------------------------------ 5xx → PaymentProcessorException (part 2)
@@ -131,6 +139,12 @@ class PaymentServiceTest {
          *       .isInstanceOf(PaymentProcessorException.class);
          */
         // TODO: implement this test
-        throw new UnsupportedOperationException("test not yet implemented");
+
+        when(http.exchange(eq("/payments"), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenThrow(new HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR));
+
+        assertThatThrownBy(() ->
+                svc.submitExternalTransfer("acc_1", "ext_acc", new BigDecimal("200.00"), "USD", "idem-000"))
+                .isInstanceOf(PaymentProcessorException.class);
     }
 }

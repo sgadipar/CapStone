@@ -56,9 +56,9 @@ class JwtAuthConverterTest {
         when(users.save(any())).thenAnswer(inv -> inv.getArgument(0));
         converter.convert(jwt("alice-sub", "CUSTOMER", "alice@test.com"));
         verify(users).save(argThat(u ->
-            u.getSubject().equals("alice-sub") &&
-            u.getEmail().equals("alice@test.com") &&
-            u.getRole() == UserRole.CUSTOMER
+                u.getSubject().equals("alice-sub") &&
+                        u.getEmail().equals("alice@test.com") &&
+                        u.getRole() == UserRole.CUSTOMER
         ));
     }
 

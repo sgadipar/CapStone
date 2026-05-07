@@ -2,6 +2,7 @@ package com.example.banking.controller;
 
 import com.example.banking.dto.NewTransactionRequest;
 import com.example.banking.dto.TransactionDto;
+import com.example.banking.exception.ResourceNotFoundException;
 import com.example.banking.kafka.TransactionEvent;
 import com.example.banking.kafka.TransactionEventPublisher;
 import com.example.banking.service.AccountService;
@@ -56,16 +57,13 @@ class AccountControllerIntegrationTest {
     @Test
     void get_accounts_without_token_returns_401() throws Exception {
         /*
-         * TODO (Day 2 — Step 2a): Test that an unauthenticated GET to /api/v1/accounts
+         * Test that an unauthenticated GET to /api/v1/accounts
          * returns 401 Unauthorized.
-         *
-         * Use: mockMvc.perform(get("/api/v1/accounts"))
-         *              .andExpect(status().isUnauthorized())
          *
          * This verifies that SecurityConfig correctly requires authentication.
          */
         mockMvc.perform(get("/api/v1/accounts"))
-               .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized());
     }
 
     // ------------------------------------------------------------------ 403
@@ -99,58 +97,50 @@ class AccountControllerIntegrationTest {
          * The rule: a non-owned account returns 404, NOT 403.
          * This prevents an attacker from learning which account IDs exist.
          */
-        when(accountService.loadOwned(eq("acc_other"), any()))
-                .thenThrow(new com.example.banking.exception.ResourceNotFoundException("account", "acc_other"));
+        // TODO: implement this test
+         when(accountService.loadOwned(eq("acc_other"), any()))
+                     .thenThrow(new ResourceNotFoundException("account", "acc_other"));
 
-        mockMvc.perform(get("/api/v1/accounts/acc_other")
-                       .with(jwt().jwt(j -> j
-                           .subject("google-sub-123")
-                           .claim("email", "alice@example.com"))
-                           .authorities(new org.springframework.security.core.authority
-                                   .SimpleGrantedAuthority("ROLE_CUSTOMER"))))
-               .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/accounts")
+                .with(jwt().jwt(j -> j
+                                .subject("google-sub-123")
+                                .claim("email", "alice@example.com"))
+                        .authorities(new org.springframework.security.core.authority
+                                .SimpleGrantedAuthority("ROLE_CUSTOMER"))))
+                .andExpect(status().isNotFound());
     }
 
     // ------------------------------------------------------------------ deposit happy path
 
     @Test
     void deposit_happy_path_returns_201_and_publishes_kafka_event() throws Exception {
-        // Setup: Create a TransactionDto stub representing the completed deposit
-        LocalDateTime now = LocalDateTime.now();
-        TransactionDto depositTxDto = new TransactionDto(
-                "txn_deposit_1", "acc_1", "DEPOSIT", new BigDecimal("50.00"),
-                "COMPLETED", null, null, "paycheck", now);
-
-        // Stub transactionService.submit(...) to return List.of(txDto)
-        when(transactionService.submit(any(NewTransactionRequest.class), any()))
-                .thenReturn(List.of(depositTxDto));
-
-        // Stub transactionService.toEvent(...) to return a TransactionEvent
-        when(transactionService.toEvent(any(), any(), eq("USD")))
-                .thenReturn(new TransactionEvent("evt_1", "txn_deposit_1", "acc_1",
-                        "usr_1", "DEPOSIT", new BigDecimal("50.00"),
-                        "USD", "COMPLETED", null, null, Instant.now()));
-
-        // Request: Build the POST request with NewTransactionRequest
-        String body = mapper.writeValueAsString(
-                new NewTransactionRequest("acc_1", "DEPOSIT",
-                        new BigDecimal("50.00"), null, "paycheck"));
-
-        // Exercise and Assert
-        mockMvc.perform(post("/api/v1/transactions")
-                       .with(jwt().jwt(j -> j
-                           .subject("google-sub-123")
-                           .claim("email", "alice@example.com"))
-                           .authorities(new org.springframework.security.core.authority
-                                   .SimpleGrantedAuthority("ROLE_CUSTOMER")))
-                       .contentType(MediaType.APPLICATION_JSON)
-                       .content(body))
-               .andExpect(status().isCreated())
-               .andExpect(jsonPath("$[0].status").value("COMPLETED"))
-               .andExpect(jsonPath("$[0].amount").value(50.00));
-
-        // Verify the controller called transactionService.publishEvent() exactly once
-        verify(transactionService, times(1)).publishEvent(any(TransactionEvent.class));
+        /*
+         * TODO (Day 1 — Step 4): Integration test for the deposit happy path.
+         *
+         * This test verifies the full HTTP layer:
+         *   1. POST to /api/v1/transactions returns 201 Created
+         *   2. Response body contains the transaction row with status=COMPLETED
+         *   3. The controller calls publisher.publishEvent() exactly once
+         *
+         * Setup:
+         *   - Create a TransactionDto stub representing the completed deposit
+         *   - Stub transactionService.submit(...) to return List.of(txDto)
+         *   - Stub transactionService.toEvent(...) to return a TransactionEvent
+         *
+         * Request:
+         *   - POST /api/v1/transactions
+         *   - .with(jwt()...) with ROLE_CUSTOMER
+         *   - Content-Type: application/json
+         *   - Body: serialise a NewTransactionRequest("acc_1", "DEPOSIT", 50.00, null, "paycheck")
+         *
+         * Assertions:
+         *   - status().isCreated()
+         *   - jsonPath("$[0].status").value("COMPLETED")
+         *   - jsonPath("$[0].amount").value(50.00)
+         *   - verify(transactionService).publishEvent(any(TransactionEvent.class))
+         */
+        // TODO: implement this test
+        throw new UnsupportedOperationException("test not yet implemented");
     }
 
     // ------------------------------------------------------------------ internal transfer creates two rows

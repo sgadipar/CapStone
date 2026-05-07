@@ -46,9 +46,7 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 
@@ -56,13 +54,13 @@ services:
   # WireMock (Payment Processor Stub)
   # ----------------------------------------
   wiremock:
-    image: wiremock/wiremock:3.3.1
+    image: wiremock/wiremock:3.6.0
     container_name: capstone-wiremock
     ports:
       - "8089:8080"
-    volumes:
-      - C:/Project/scaffolding/Capstone/wiremock-stubs/mappings:/home/wiremock/mappings
     command: ["--global-response-templating", "--disable-gzip", "--verbose"]
+    volumes:
+      - ./wiremock-stubs:/home/wiremock
 
 volumes:
   oracle_data:

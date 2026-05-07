@@ -4,6 +4,7 @@ import com.example.banking.model.BankUserEntity;
 import com.example.banking.model.UserRole;
 import com.example.banking.repository.BankUserRepository;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -11,7 +12,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Converts a validated JWT into a Spring Security authentication.
@@ -69,16 +69,35 @@ public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationTo
          * Security note: DO NOT use the JWT subject as the principal name directly.
          * The local userId is the primary key used for ALL ownership checks.
          */
-
-        // TODO: implement this test
         String subject = jwt.getSubject();
-        String email = Optional.ofNullable(jwt.getClaimAsString("email")).orElse(subject + "@mock.local");
-        String name = Optional.ofNullable(jwt.getClaimAsString("name")).orElse(subject);
+        String rawEmail = jwt.getClaimAsString("email");
+        String email = rawEmail != null ? rawEmail : subject + "@mock.local";
+        String rawName = jwt.getClaimAsString("name");
+        String name = rawName != null ? rawName : subject;
+
+        // Determine role from JWT claim; default to CUSTOMER if not present
         String roleClaim = jwt.getClaimAsString("role");
         UserRole role = "ADMIN".equalsIgnoreCase(roleClaim) ? UserRole.ADMIN : UserRole.CUSTOMER;
-        BankUserEntity localUser = users.findBySubject(subject)
-                .orElseGet(() -> users.save(BankUserEntity.newUser(subject, email, name, role)));
-        List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + localUser.getRole().name()));
+
+        // Upsert: create on first login, find on subsequent logins.
+        // Guard against a race condition where two concurrent requests both see
+        // Optional.empty() and both attempt the INSERT — the second one hits the
+        // UQ_BANK_USERS_SUBJECT constraint.  We catch that and fall back to a
+        // plain lookup so the request succeeds instead of returning 500.
+        BankUserEntity localUser;
+        try {
+            localUser = users.findBySubject(subject)
+                    .orElseGet(() -> users.save(
+                            BankUserEntity.newUser(subject, email, name, role)));
+        } catch (DataIntegrityViolationException ex) {
+            // Lost the insert race — the row was created by a concurrent request.
+            localUser = users.findBySubject(subject)
+                    .orElseThrow(() -> ex);
+        }
+
+        var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + localUser.getRole().name()));
+
+        // Set the principal name to the local userId
         return new JwtAuthenticationToken(jwt, authorities, localUser.getUserId());
     }
 }

@@ -3,6 +3,7 @@ package com.example.banking.service;
 import com.example.banking.dto.NewTransactionRequest;
 import com.example.banking.dto.TransactionDto;
 import com.example.banking.exception.InsufficientFundsException;
+import com.example.banking.exception.PaymentProcessorException;
 import com.example.banking.exception.ResourceNotFoundException;
 import com.example.banking.kafka.TransactionEventPublisher;
 import com.example.banking.model.AccountEntity;
@@ -153,7 +154,7 @@ class TransactionServiceTest {
                 new NewTransactionRequest("acc_1", "WITHDRAWAL",
                         new BigDecimal("50.00"), null, "withdrawal"),
                 "usr_1"))
-            .isInstanceOf(InsufficientFundsException.class);
+                .isInstanceOf(InsufficientFundsException.class);
 
         // Verify: balance remains unchanged at 10.00
         assertThat(acct.getBalance()).isEqualByComparingTo("10.00");
@@ -202,8 +203,43 @@ class TransactionServiceTest {
          *   - source balance is 300.00
          *   - dest balance is 300.00
          */
-        // TODO: implement this test
-        throw new UnsupportedOperationException("test not yet implemented");
+        // Setup: source and destination accounts both owned by usr_1
+        AccountEntity acctSrc = account("acc_src", "usr_1", new BigDecimal("500.00"));
+        AccountEntity acctDst = account("acc_dst", "usr_1", new BigDecimal("100.00"));
+
+        when(accounts.findById("acc_src")).thenReturn(Optional.of(acctSrc));
+        when(accounts.findByOwnerId("usr_1")).thenReturn(List.of(acctSrc, acctDst));
+        when(transactions.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // Exercise: submit internal TRANSFER_OUT from acc_src to acc_dst
+        List<TransactionDto> result = svc.submit(
+                new NewTransactionRequest("acc_src", "TRANSFER_OUT",
+                        new BigDecimal("200.00"), "acc_dst", "internal transfer"),
+                "usr_1");
+
+        // Verify: result has size 2 (TRANSFER_OUT and TRANSFER_IN rows)
+        assertThat(result).hasSize(2);
+
+        // Verify: one row has type TRANSFER_OUT, the other has type TRANSFER_IN
+        boolean hasTransferOut = result.stream().anyMatch(tx -> "TRANSFER_OUT".equals(tx.type()));
+        boolean hasTransferIn = result.stream().anyMatch(tx -> "TRANSFER_IN".equals(tx.type()));
+        assertThat(hasTransferOut).isTrue();
+        assertThat(hasTransferIn).isTrue();
+
+        // Verify: both rows have status COMPLETED
+        assertThat(result).allMatch(tx -> TransactionStatus.COMPLETED.name().equals(tx.status()));
+
+        // Verify: both rows have the same non-null transferGroupId
+        String groupId = result.get(0).transferGroupId();
+        assertThat(groupId).isNotNull();
+        assertThat(result.get(1).transferGroupId()).isEqualTo(groupId);
+
+        // Verify: balances updated correctly (src: 500 - 200 = 300, dst: 100 + 200 = 300)
+        assertThat(acctSrc.getBalance()).isEqualByComparingTo("300.00");
+        assertThat(acctDst.getBalance()).isEqualByComparingTo("300.00");
+
+        // Verify: payment service was NOT called (internal transfer, no external processor needed)
+        verify(paymentService, never()).submitExternalTransfer(any(), any(), any(), any(), any());
     }
 
     // ------------------------------------------------------------------ external transfer
@@ -249,7 +285,23 @@ class TransactionServiceTest {
          *   - assertThatThrownBy(...).isInstanceOf(PaymentProcessorException.class)
          *   - acct.getBalance() is still 1000.00  (CRITICAL: no debit on failure)
          */
-        // TODO: implement this test
-        throw new UnsupportedOperationException("test not yet implemented");
+        // Setup: account with balance 1000.00
+        AccountEntity acct = account("acc_1", "usr_1", new BigDecimal("1000.00"));
+        when(accounts.findById("acc_1")).thenReturn(Optional.of(acct));
+        // "ext_counterparty" is NOT in usr_1's owned accounts → external path
+        when(accounts.findByOwnerId("usr_1")).thenReturn(List.of(acct));
+        when(transactions.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        // paymentService.submitExternalTransfer throws PaymentProcessorException
+        doThrow(new PaymentProcessorException("upstream failure")).when(paymentService).submitExternalTransfer(any(), any(), any(), any(), any());
+
+        // Exercise & Verify: submit TRANSFER_OUT should throw PaymentProcessorException
+        assertThatThrownBy(() -> svc.submit(
+                new NewTransactionRequest("acc_1", "TRANSFER_OUT",
+                        new BigDecimal("250.00"), "ext_counterparty", "invoice"),
+                "usr_1"))
+                .isInstanceOf(PaymentProcessorException.class);
+
+        // Verify: balance remains unchanged at 1000.00 (no debit on failure)
+        assertThat(acct.getBalance()).isEqualByComparingTo("1000.00");
     }
 }

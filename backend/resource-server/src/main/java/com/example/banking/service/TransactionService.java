@@ -113,31 +113,25 @@ public class TransactionService {
      * Hint: Look at how applyWithdrawal handles funds — same pattern but adding.
      */
     private TransactionDto applyDeposit(AccountEntity source, NewTransactionRequest req) {
-        // Step 1: Validate - DEPOSIT cannot have a counterparty
+        // TODO: implement deposit — see Javadoc above
         if (req.counterparty() != null && !req.counterparty().isBlank()) {
-            throw new BusinessRuleException("DEPOSIT cannot have a counterparty");
+            throw new BusinessRuleException("DEPOSIT must not have a counterparty");
         }
 
-        // Step 2: Add amount to balance using BigDecimal.add()
-        BigDecimal newBalance = source.getBalance().add(req.amount());
-        source.setBalance(newBalance);
+        var amount = source.getBalance().add(req.amount());
+        source.setBalance(amount);
 
-        // Step 3: Persist the updated account
         accounts.save(source);
 
-        // Step 4: Create transaction row with all required fields
-        TransactionEntity row = persistRow(
+        return TransactionDto.from(persistRow(
                 source.getAccountId(),
                 TransactionType.DEPOSIT,
                 req.amount(),
                 TransactionStatus.COMPLETED,
-                null,  // counterparty = null (no counterparty for deposit)
-                null,  // transferGroupId = null (not a transfer)
+                null,
+                null,
                 req.description()
-        );
-
-        // Step 5: Return the transaction as a DTO
-        return TransactionDto.from(row);
+        ));
     }
 
     // ---- WITHDRAWAL -----------------------------------------------------
@@ -163,34 +157,26 @@ public class TransactionService {
      * (step 3). If the check throws, the balance must remain unchanged.
      */
     private TransactionDto applyWithdrawal(AccountEntity source, NewTransactionRequest req) {
-        // Step 1: Validate - WITHDRAWAL cannot have a counterparty
+        // TODO: implement withdrawal — see Javadoc above
         if (req.counterparty() != null && !req.counterparty().isBlank()) {
-            throw new BusinessRuleException("WITHDRAWAL cannot have a counterparty");
+            throw new BusinessRuleException("WITHDRAWAL must not have a counterparty");
         }
-
-        // Step 2: Check sufficient funds BEFORE modifying balance
         requireFunds(source, req.amount());
 
-        // Step 3: Subtract amount from balance using BigDecimal.subtract()
-        BigDecimal newBalance = source.getBalance().subtract(req.amount());
-        source.setBalance(newBalance);
+        var amount = source.getBalance().subtract(req.amount());
+        source.setBalance(amount);
 
-        // Step 4: Persist the updated account
         accounts.save(source);
 
-        // Step 5: Create transaction row with all required fields
-        TransactionEntity row = persistRow(
+        return TransactionDto.from(persistRow(
                 source.getAccountId(),
                 TransactionType.WITHDRAWAL,
                 req.amount(),
                 TransactionStatus.COMPLETED,
-                null,  // counterparty = null (no counterparty for withdrawal)
-                null,  // transferGroupId = null (not a transfer)
+                null,
+                null,
                 req.description()
-        );
-
-        // Step 6: Return the transaction as a DTO
-        return TransactionDto.from(row);
+        ));
     }
 
     // ---- TRANSFER_OUT ---------------------------------------------------

@@ -59,11 +59,3 @@ Authorization: Bearer {{token}}
 ### authorization probe — someone else's account, expect 404
 GET {{host}}/api/v1/accounts/acc_someone_elses
 Authorization: Bearer {{token}}
-
-### Client Credentials token -- service identity, no user involved.
-### The Authorization header is Base64("workforce-service:workforce-service-secret").
-POST http://localhost:9000/oauth2/token
-Authorization: Basic YmFuay1jbGllbnQtYmZmOmJhbmstY2xpZW50LWJmZi1zZWNyZXQ=
-Content-Type: application/x-www-form-urlencoded
-
-grant_type=client_credentials&scope=email

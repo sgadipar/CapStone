@@ -4,7 +4,7 @@
     "method": "POST",
     "url": "/payments",
     "bodyPatterns": [
-      { "contains": "\"amount\": 5" }
+      { "matchesJsonPath": "$.[?(@.amount > 10000)]" }
     ]
   },
   "response": {
