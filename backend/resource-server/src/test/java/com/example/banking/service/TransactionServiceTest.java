@@ -2,6 +2,7 @@ package com.example.banking.service;
 
 import com.example.banking.dto.NewTransactionRequest;
 import com.example.banking.dto.TransactionDto;
+import com.example.banking.exception.BusinessRuleException;
 import com.example.banking.exception.InsufficientFundsException;
 import com.example.banking.exception.PaymentProcessorException;
 import com.example.banking.exception.ResourceNotFoundException;
@@ -303,5 +304,96 @@ class TransactionServiceTest {
 
         // Verify: balance remains unchanged at 1000.00 (no debit on failure)
         assertThat(acct.getBalance()).isEqualByComparingTo("1000.00");
+    }
+
+    // ------------------------------------------------------------------ additional tests
+
+    @Test
+    void deposit_with_counterparty_throws_business_rule_exception() {
+        AccountEntity acct = account("acc_1", "usr_1", new BigDecimal("200.00"));
+        when(accounts.findById("acc_1")).thenReturn(Optional.of(acct));
+
+        assertThatThrownBy(() -> svc.submit(
+                new NewTransactionRequest("acc_1", "DEPOSIT",
+                        new BigDecimal("50.00"), "counterparty", "paycheck"),
+                "usr_1"))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessage("DEPOSIT must not have a counterparty");
+    }
+
+    @Test
+    void withdrawal_with_counterparty_throws_business_rule_exception() {
+        AccountEntity acct = account("acc_1", "usr_1", new BigDecimal("200.00"));
+        when(accounts.findById("acc_1")).thenReturn(Optional.of(acct));
+
+        assertThatThrownBy(() -> svc.submit(
+                new NewTransactionRequest("acc_1", "WITHDRAWAL",
+                        new BigDecimal("50.00"), "counterparty", "withdrawal"),
+                "usr_1"))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessage("WITHDRAWAL must not have a counterparty");
+    }
+
+    @Test
+    void transfer_out_with_null_counterparty_throws_business_rule_exception() {
+        AccountEntity acct = account("acc_1", "usr_1", new BigDecimal("200.00"));
+        when(accounts.findById("acc_1")).thenReturn(Optional.of(acct));
+
+        assertThatThrownBy(() -> svc.submit(
+                new NewTransactionRequest("acc_1", "TRANSFER_OUT",
+                        new BigDecimal("50.00"), null, "transfer"),
+                "usr_1"))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessage("TRANSFER_OUT requires a counterparty");
+    }
+
+    @Test
+    void transfer_out_with_blank_counterparty_throws_business_rule_exception() {
+        AccountEntity acct = account("acc_1", "usr_1", new BigDecimal("200.00"));
+        when(accounts.findById("acc_1")).thenReturn(Optional.of(acct));
+
+        assertThatThrownBy(() -> svc.submit(
+                new NewTransactionRequest("acc_1", "TRANSFER_OUT",
+                        new BigDecimal("50.00"), "", "transfer"),
+                "usr_1"))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessage("TRANSFER_OUT requires a counterparty");
+    }
+
+    @Test
+    void submit_with_unknown_transaction_type_throws_business_rule_exception() {
+        AccountEntity acct = account("acc_1", "usr_1", new BigDecimal("200.00"));
+        when(accounts.findById("acc_1")).thenReturn(Optional.of(acct));
+
+        assertThatThrownBy(() -> svc.submit(
+                new NewTransactionRequest("acc_1", "UNKNOWN_TYPE",
+                        new BigDecimal("50.00"), null, "test"),
+                "usr_1"))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessage("Unknown transaction type: UNKNOWN_TYPE");
+    }
+
+    @Test
+    void submit_with_transfer_in_type_throws_business_rule_exception() {
+        AccountEntity acct = account("acc_1", "usr_1", new BigDecimal("200.00"));
+        when(accounts.findById("acc_1")).thenReturn(Optional.of(acct));
+
+        assertThatThrownBy(() -> svc.submit(
+                new NewTransactionRequest("acc_1", "TRANSFER_IN",
+                        new BigDecimal("50.00"), "counterparty", "test"),
+                "usr_1"))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessage("TRANSFER_IN is created by the system; clients cannot post it directly");
+    }
+
+    @Test
+    void submit_against_nonexistent_account_throws_resource_not_found() {
+        when(accounts.findById("acc_nonexistent")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> svc.submit(
+                new NewTransactionRequest("acc_nonexistent", "DEPOSIT",
+                        new BigDecimal("50.00"), null, "test"),
+                "usr_1"))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }
