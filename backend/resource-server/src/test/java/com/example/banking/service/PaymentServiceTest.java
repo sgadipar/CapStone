@@ -8,12 +8,14 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
 import java.net.SocketTimeoutException;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -146,5 +148,44 @@ class PaymentServiceTest {
         assertThatThrownBy(() ->
                 svc.submitExternalTransfer("acc_1", "ext_acc", new BigDecimal("200.00"), "USD", "idem-000"))
                 .isInstanceOf(PaymentProcessorException.class);
+    }
+
+    // ------------------------------------------------------------------ additional tests
+
+    @Test
+    void submit_external_transfer_sends_correct_request_body() {
+        ArgumentCaptor<HttpEntity<Map<String, Object>>> captor = ArgumentCaptor.forClass(HttpEntity.class);
+        when(http.exchange(eq("/payments"), eq(HttpMethod.POST), captor.capture(), eq(String.class)))
+                .thenReturn(org.springframework.http.ResponseEntity.ok("{}"));
+
+        svc.submitExternalTransfer("acc_1", "ext_acc", new BigDecimal("100.00"), "USD", "idem-123");
+
+        Map<String, Object> body = captor.getValue().getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.get("sourceAccount")).isEqualTo("acc_1");
+        assertThat(body.get("destinationAccount")).isEqualTo("ext_acc");
+        assertThat(body.get("amount")).isEqualTo(new BigDecimal("100.00"));
+        assertThat(body.get("currency")).isEqualTo("USD");
+    }
+
+    @Test
+    void http_4xx_from_processor_throws_payment_processor_exception() {
+        when(http.exchange(eq("/payments"), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
+                .thenThrow(new org.springframework.web.client.HttpClientErrorException(HttpStatus.BAD_REQUEST));
+
+        assertThatThrownBy(() ->
+                svc.submitExternalTransfer("acc_1", "ext_acc", new BigDecimal("75.00"), "USD", "idem-789"))
+                .isInstanceOf(PaymentProcessorException.class);
+    }
+
+    @Test
+    void content_type_is_set_to_application_json() {
+        ArgumentCaptor<HttpEntity<Object>> captor = ArgumentCaptor.forClass(HttpEntity.class);
+        when(http.exchange(eq("/payments"), eq(HttpMethod.POST), captor.capture(), eq(String.class)))
+                .thenReturn(org.springframework.http.ResponseEntity.ok("{}"));
+
+        svc.submitExternalTransfer("acc_1", "ext_acc", new BigDecimal("50.00"), "USD", "idem-456");
+
+        assertThat(captor.getValue().getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_JSON);
     }
 }
