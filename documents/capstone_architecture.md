@@ -4,6 +4,35 @@
 
 The Secure Digital Banking Platform follows a layered, OAuth2-secured microservices architecture designed for security and separation of concerns. The **React/Vite Frontend** (SPAs) acts as the user interface and securely obtains OAuth2 tokens via the **mock-auth service** (Spring Authorization Server), which generates and signs JWT tokens. These tokens are then forwarded through the **BFF (Backend-for-Frontend)** on port 8080, which acts as a secure API gateway that extracts the JWT from sessions, validates it, and re-attaches it as a Bearer token when proxying requests to the **Resource Server** (port 8081). The **Resource Server** implements multi-layered security by validating JWT signatures via a multi-issuer JwtDecoder supporting both mock-auth and Google OIDC providers, enforcing role-based access control (ROLE_ADMIN vs ROLE_CUSTOMER) at the controller level with @PreAuthorize, and implementing resource ownership checks at the service layer to prevent unauthorized account access. All transaction operations are persisted to **Oracle 21c XE** via Flyway migrations and published as Kafka events for asynchronous processing. External payment processor calls are abstracted through **WireMock stubs** in development for safe testing without hitting real payment systems. This architecture ensures end-to-end security through token validation, ownership enforcement, role-based authorization, and separation between the frontend-facing BFF and the protected resource server.
 
+```
+                ┌─────────────────────────┐
+                │  Authorization Server   │
+                │  (mock, port 9000)      │
+                │  Spring Authorization   │
+                │  Server                 │
+                └──────────▲──────────────┘
+                           │ (1) OAuth2 Authorization Code + PKCE
+                           │     (server-to-server, BFF holds the secret)
+                           │
+   (browser ↔ BFF, same origin)            (BFF ↔ Resource Server)
+   ┌──────────────┐    ┌─────────────────┐    ┌────────────────────┐
+   │ React SPA    │    │ Spring Boot BFF │    │ Resource Server    │
+   │ (Vite, dev   │◄──►│ port 8080       │◄──►│ port 8081          │
+   │  proxy:5173) │    │ OAuth2 client   │    │ Banking API        │
+   │              │    │ Session cookie  │    │ JPA, Kafka, etc.   │
+   └──────────────┘    └─────┬───────────┘    └────────┬───────────┘
+       cookie                │                         │
+                             │                         ├──► Oracle 21c
+                             │                         ├──► Kafka topic
+                             │                         └──► Payment Processor
+                             │                              (WireMock)
+                             │ WebClient + OAuth2 filter
+                             │ attaches Bearer token
+                             ▼
+                    (calls Resource Server with
+                     the user's access token)
+```
+
 ---
 
 ## Architecture Components
